@@ -63,16 +63,31 @@ async function loginWithAccount(user, pass) {
     // 第一步：输入邮箱
     console.log(`📧 ${user} - 填写邮箱...`);
     
-    // 尝试多种方式定位邮箱输入框
-    let emailInput = await page.locator('input[name="email"]').first();
-    if (await emailInput.count() === 0) {
-      emailInput = await page.locator('input[type="email"]').first();
-    }
-    if (await emailInput.count() === 0) {
-      emailInput = await page.locator('input[placeholder*="Email"]').first();
+    // 使用多种定位器策略，类似Python脚本
+    let emailInput = null;
+    const emailLocators = [
+      'input[name="email"]',
+      'input[type="email"]',
+      'input[placeholder*="Email"]',
+      'css=input[name="email"]',
+      'css=input[type="email"]',
+      'xpath=//input[@type="email"]',
+      'xpath=//input[@name="email"]'
+    ];
+    
+    for (const locator of emailLocators) {
+      try {
+        emailInput = await page.locator(locator).first();
+        if (await emailInput.count() > 0) {
+          console.log(`✅ ${user} - 使用定位器 '${locator}' 找到邮箱输入框`);
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
     }
     
-    if (await emailInput.count() > 0) {
+    if (emailInput && await emailInput.count() > 0) {
       await emailInput.fill(user);
       await page.waitForTimeout(2000);
       console.log(`✅ ${user} - 邮箱输入成功`);
@@ -82,85 +97,154 @@ async function loginWithAccount(user, pass) {
     
     // 点击Continue按钮
     console.log(`➡️ ${user} - 点击Continue按钮...`);
-    await page.click('button:has-text("Continue")', { timeout: 10000 });
+    
+    // 优先使用JavaScript点击，类似Python脚本
+    let continueClicked = false;
+    try {
+      await page.evaluate(() => {
+        const continueBtn = document.querySelector("button[type='submit']");
+        if (continueBtn && continueBtn.textContent.includes('Continue')) {
+          continueBtn.click();
+        }
+      });
+      continueClicked = true;
+      console.log(`✅ ${user} - 使用JavaScript成功点击Continue按钮`);
+    } catch (e) {
+      console.log(`⚠️ ${user} - JavaScript点击失败，尝试Playwright点击: ${e.message}`);
+      try {
+        await page.click('button:has-text("Continue")', { timeout: 10000 });
+        continueClicked = true;
+        console.log(`✅ ${user} - 使用Playwright成功点击Continue按钮`);
+      } catch (e2) {
+        throw new Error(`无法点击Continue按钮: ${e2.message}`);
+      }
+    }
+    
+    if (!continueClicked) {
+      throw new Error('无法点击Continue按钮');
+    }
+    
     await page.waitForTimeout(3000);
     
     // 第二步：输入密码
     console.log(`🔒 ${user} - 填写密码...`);
     
-    // 等待密码输入框出现并定位
-    let passwordInput = await page.locator('input[name="password"]').first();
-    if (await passwordInput.count() === 0) {
-      passwordInput = await page.locator('input[type="password"]').first();
-    }
-    if (await passwordInput.count() === 0) {
-      passwordInput = await page.locator('input[placeholder*="Password"]').first();
-    }
+    // 使用多种定位器策略查找密码输入框
+    let passwordInput = null;
+    const passwordLocators = [
+      'input[name="password"]',
+      'input[type="password"]',
+      'input[placeholder*="Password"]',
+      'css=input[name="password"]',
+      'css=input[type="password"]',
+      'xpath=//input[@type="password"]',
+      'xpath=//input[@name="password"]'
+    ];
     
-    // 等待密码输入框出现（最多等待10秒）
-    let attempts = 0;
-    while (await passwordInput.count() === 0 && attempts < 10) {
+    // 等待密码输入框出现
+    let passwordFound = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      for (const locator of passwordLocators) {
+        try {
+          passwordInput = await page.locator(locator).first();
+          if (await passwordInput.count() > 0) {
+            console.log(`✅ ${user} - 使用定位器 '${locator}' 找到密码输入框`);
+            passwordFound = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (passwordFound) break;
+      
+      console.log(`⏳ ${user} - 等待密码输入框出现... (${attempt + 1}/10)`);
       await page.waitForTimeout(1000);
-      passwordInput = await page.locator('input[name="password"]').first();
-      if (await passwordInput.count() === 0) {
-        passwordInput = await page.locator('input[type="password"]').first();
-      }
-      if (await passwordInput.count() === 0) {
-        passwordInput = await page.locator('input[placeholder*="Password"]').first();
-      }
-      attempts++;
     }
     
-    if (await passwordInput.count() > 0) {
-      await passwordInput.fill(pass);
-      await page.waitForTimeout(2000);
-      console.log(`✅ ${user} - 密码输入成功`);
-    } else {
+    if (!passwordFound) {
       throw new Error('未找到密码输入框');
     }
+    
+    await passwordInput.fill(pass);
+    await page.waitForTimeout(2000);
+    console.log(`✅ ${user} - 密码输入成功`);
     
     // 点击Sign in按钮
     console.log(`🔑 ${user} - 点击Sign in按钮...`);
     
-    // 等待Sign in按钮变为可用状态
-    let signInAttempts = 0;
-    let signInClicked = false;
+    // 首先找到Sign in按钮，类似Python脚本逻辑
+    let signInButton = null;
+    try {
+      signInButton = await page.locator('text=Sign in').first();
+      if (await signInButton.count() === 0) {
+        throw new Error('未找到Sign in按钮');
+      }
+      console.log(`✅ ${user} - 找到Sign in按钮，检查是否可用...`);
+    } catch (e) {
+      throw new Error(`未找到Sign in按钮: ${e.message}`);
+    }
     
-    while (!signInClicked && signInAttempts < 10) {
+    // 等待Sign in按钮变为可用状态，完全按照Python脚本逻辑
+    let signInClicked = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        const signInButton = await page.locator('button:has-text("Sign in")').first();
-        if (await signInButton.count() > 0) {
-          // 检查按钮是否被禁用
-          const isDisabled = await signInButton.isDisabled();
+        // 重新获取按钮元素和class属性
+        const currentButton = await page.locator('text=Sign in').first();
+        const buttonClass = await currentButton.getAttribute('class');
+        console.log(`🔍 ${user} - Sign in按钮class属性: ${buttonClass}`);
+        
+        // 检查按钮是否可用，完全按照Python脚本的逻辑
+        let isDisabled = false;
+        if (buttonClass) {
+          isDisabled = buttonClass.includes('disabled') || buttonClass.includes('bg-gray/70');
+        }
+        
+        if (!isDisabled) {
+          console.log(`✅ ${user} - Sign in按钮已可用，开始点击...`);
           
-          if (!isDisabled) {
-            // 尝试多种点击方法
+          // 尝试多种点击方法，完全按照Python脚本的顺序
+          try {
+            // 方法1: 使用JavaScript点击（最可靠）
+            await page.evaluate(() => {
+              const submitBtn = document.querySelector("button[type='submit']");
+              if (submitBtn) submitBtn.click();
+            });
+            signInClicked = true;
+            console.log(`✅ ${user} - 使用JavaScript成功点击Sign in按钮`);
+            break;
+          } catch (e1) {
+            console.log(`⚠️ ${user} - JavaScript点击失败: ${e1.message}`);
             try {
-              await signInButton.click();
+              // 方法2: 使用Playwright的click方法
+              await currentButton.click();
               signInClicked = true;
-              console.log(`✅ ${user} - Sign in按钮点击成功`);
-            } catch (clickError) {
-              // 尝试JavaScript点击
-              await page.evaluate(() => {
-                const submitBtn = document.querySelector('button[type="submit"]');
-                if (submitBtn) submitBtn.click();
-              });
-              signInClicked = true;
-              console.log(`✅ ${user} - 使用JavaScript成功点击Sign in按钮`);
+              console.log(`✅ ${user} - 使用Playwright成功点击Sign in按钮`);
+              break;
+            } catch (e2) {
+              console.log(`⚠️ ${user} - Playwright点击失败: ${e2.message}`);
+              try {
+                // 方法3: 使用hover + click
+                await currentButton.hover();
+                await page.waitForTimeout(500);
+                await currentButton.click();
+                signInClicked = true;
+                console.log(`✅ ${user} - 使用hover+click成功点击Sign in按钮`);
+                break;
+              } catch (e3) {
+                console.log(`❌ ${user} - 所有点击方法都失败: ${e3.message}`);
+                break;
+              }
             }
-          } else {
-            console.log(`⏳ ${user} - Sign in按钮仍被禁用，等待中... (${signInAttempts + 1}/10)`);
-            await page.waitForTimeout(1000);
           }
         } else {
-          console.log(`⏳ ${user} - 等待Sign in按钮出现... (${signInAttempts + 1}/10)`);
+          console.log(`⏳ ${user} - 按钮仍被禁用，等待中... (${attempt + 1}/10)`);
           await page.waitForTimeout(1000);
         }
-        signInAttempts++;
       } catch (e) {
-        console.log(`⚠️ ${user} - 检查Sign in按钮时出错: ${e.message}`);
+        console.log(`⚠️ ${user} - 检查按钮状态时出错: ${e.message}，重试中... (${attempt + 1}/10)`);
         await page.waitForTimeout(1000);
-        signInAttempts++;
       }
     }
     
@@ -168,9 +252,14 @@ async function loginWithAccount(user, pass) {
       throw new Error('无法点击Sign in按钮');
     }
     
-    // 等待页面响应登录操作
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(5000);
+    // 等待页面响应登录操作，减少超时时间
+    console.log(`⏳ ${user} - 等待页面响应登录操作...`);
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
+    } catch (e) {
+      console.log(`⚠️ ${user} - 网络空闲等待超时，继续检查登录状态...`);
+    }
+    await page.waitForTimeout(3000);
     
     // 检查登录是否成功
     const currentUrl = page.url();
@@ -183,7 +272,11 @@ async function loginWithAccount(user, pass) {
     } else {
       // 检查页面内容以确定登录状态
       const pageContent = await page.content();
-      if (pageContent.includes('dashboard') || pageContent.includes('applications') || pageContent.includes('services')) {
+      if (pageContent.includes('dashboard') || 
+          pageContent.includes('applications') || 
+          pageContent.includes('services') ||
+          pageContent.includes('Deployments') ||
+          pageContent.includes('Overview')) {
         console.log(`✅ ${user} - 登录成功！（通过页面内容确认）`);
         result.success = true;
         result.message = `✅ ${user} 登录成功`;
