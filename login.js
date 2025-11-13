@@ -305,10 +305,10 @@ async function loginWithAccount(user, pass) {
     await page.waitForTimeout(3000);
     
     // 检查登录是否成功
-    const currentUrl = page.url();
-    console.log(`🔍 ${user} - 登录后URL: ${currentUrl}`);
+    const loginUrl = page.url();
+    console.log(`🔍 ${user} - 登录后URL: ${loginUrl}`);
     
-    if (currentUrl.includes('koyeb.com') && !currentUrl.includes('/auth/signin')) {
+    if (loginUrl.includes('koyeb.com') && !loginUrl.includes('/auth/signin')) {
       console.log(`✅ ${user} - 登录成功！已跳转到主页面`);
       result.success = true;
       result.message = `✅ ${user} 登录成功`;
