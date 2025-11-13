@@ -57,8 +57,51 @@ async function loginWithAccount(user, pass) {
     page.setDefaultTimeout(30000);
     
     console.log(`📱 ${user} - 正在访问Koyeb登录页面...`);
-    await page.goto('https://app.koyeb.com/auth/signin', { waitUntil: 'networkidle' });
+    
+    // 优化页面加载策略，类似Python脚本
+    try {
+      // 首先尝试简单的页面导航，不等待networkidle
+      await page.goto('https://app.koyeb.com/auth/signin', { 
+        waitUntil: 'domcontentloaded',
+        timeout: 20000 
+      });
+      console.log(`✅ ${user} - 页面基本加载完成`);
+    } catch (e) {
+      console.log(`⚠️ ${user} - domcontentloaded加载失败，尝试load事件: ${e.message}`);
+      try {
+        // 备选方案：等待load事件
+        await page.goto('https://app.koyeb.com/auth/signin', { 
+          waitUntil: 'load',
+          timeout: 25000 
+        });
+        console.log(`✅ ${user} - 页面load事件完成`);
+      } catch (e2) {
+        console.log(`⚠️ ${user} - load事件也失败，尝试无等待策略: ${e2.message}`);
+        try {
+          // 最后备选：不等待任何特定事件
+          await page.goto('https://app.koyeb.com/auth/signin', { 
+            waitUntil: 'commit',
+            timeout: 15000 
+          });
+          console.log(`✅ ${user} - 页面导航完成（commit）`);
+        } catch (e3) {
+          throw new Error(`页面访问完全失败: ${e3.message}`);
+        }
+      }
+    }
+    
+    // 类似Python脚本，简单等待页面稳定
+    console.log(`⏳ ${user} - 等待页面稳定...`);
     await page.waitForTimeout(5000);
+    
+    // 验证页面是否正确加载
+    const currentUrl = page.url();
+    console.log(`🔍 ${user} - 当前URL: ${currentUrl}`);
+    console.log(`🔍 ${user} - 页面标题: ${await page.title()}`);
+    
+    if (!currentUrl.includes('koyeb.com')) {
+      throw new Error('页面未正确加载到Koyeb域名');
+    }
     
     // 第一步：输入邮箱
     console.log(`📧 ${user} - 填写邮箱...`);
