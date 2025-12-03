@@ -43,45 +43,45 @@ async function sendTelegram(message) {
 
 async function loginWithAccount(user, pass) {
   console.log(`\n🚀 开始登录账号: ${user}`);
-  
-  const browser = await chromium.launch({ 
+
+  const browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-  
+
   let page;
   let result = { user, success: false, message: '' };
-  
+
   try {
     page = await browser.newPage();
     page.setDefaultTimeout(30000);
-    
+
     console.log(`📱 ${user} - 正在访问Koyeb登录页面...`);
-    
+
     // 优化页面加载策略，类似Python脚本
     try {
       // 首先尝试简单的页面导航，不等待networkidle
-      await page.goto('https://app.koyeb.com/auth/signin', { 
+      await page.goto('https://app.koyeb.com/auth/signin', {
         waitUntil: 'domcontentloaded',
-        timeout: 20000 
+        timeout: 20000
       });
       console.log(`✅ ${user} - 页面基本加载完成`);
     } catch (e) {
       console.log(`⚠️ ${user} - domcontentloaded加载失败，尝试load事件: ${e.message}`);
       try {
         // 备选方案：等待load事件
-        await page.goto('https://app.koyeb.com/auth/signin', { 
+        await page.goto('https://app.koyeb.com/auth/signin', {
           waitUntil: 'load',
-          timeout: 25000 
+          timeout: 25000
         });
         console.log(`✅ ${user} - 页面load事件完成`);
       } catch (e2) {
         console.log(`⚠️ ${user} - load事件也失败，尝试无等待策略: ${e2.message}`);
         try {
           // 最后备选：不等待任何特定事件
-          await page.goto('https://app.koyeb.com/auth/signin', { 
+          await page.goto('https://app.koyeb.com/auth/signin', {
             waitUntil: 'commit',
-            timeout: 15000 
+            timeout: 15000
           });
           console.log(`✅ ${user} - 页面导航完成（commit）`);
         } catch (e3) {
@@ -89,26 +89,27 @@ async function loginWithAccount(user, pass) {
         }
       }
     }
-    
+
     // 类似Python脚本，简单等待页面稳定
     console.log(`⏳ ${user} - 等待页面稳定...`);
     await page.waitForTimeout(5000);
-    
+
     // 验证页面是否正确加载
     const currentUrl = page.url();
     console.log(`🔍 ${user} - 当前URL: ${currentUrl}`);
     console.log(`🔍 ${user} - 页面标题: ${await page.title()}`);
-    
+
     if (!currentUrl.includes('koyeb.com')) {
       throw new Error('页面未正确加载到Koyeb域名');
     }
-    
+
     // 第一步：输入邮箱
     console.log(`📧 ${user} - 填写邮箱...`);
-    
-    // 使用多种定位器策略，类似Python脚本
+
+    // 使用多种定位器策略，类似Python脚本（第一阶段）
     let emailInput = null;
     const emailLocators = [
+      'input.w-full[type="email"]',  // 第一阶段特定的 class
       'input[name="email"]',
       'input[type="email"]',
       'input[placeholder*="Email"]',
@@ -117,7 +118,7 @@ async function loginWithAccount(user, pass) {
       'xpath=//input[@type="email"]',
       'xpath=//input[@name="email"]'
     ];
-    
+
     for (const locator of emailLocators) {
       try {
         emailInput = await page.locator(locator).first();
@@ -129,7 +130,7 @@ async function loginWithAccount(user, pass) {
         continue;
       }
     }
-    
+
     if (emailInput && await emailInput.count() > 0) {
       await emailInput.fill(user);
       await page.waitForTimeout(2000);
@@ -137,10 +138,10 @@ async function loginWithAccount(user, pass) {
     } else {
       throw new Error('未找到邮箱输入框');
     }
-    
+
     // 点击Continue按钮
     console.log(`➡️ ${user} - 点击Continue按钮...`);
-    
+
     // 优先使用JavaScript点击，类似Python脚本
     let continueClicked = false;
     try {
@@ -162,19 +163,118 @@ async function loginWithAccount(user, pass) {
         throw new Error(`无法点击Continue按钮: ${e2.message}`);
       }
     }
-    
+
     if (!continueClicked) {
       throw new Error('无法点击Continue按钮');
     }
-    
+
+    // 等待页面跳转到第二阶段
+    console.log(`⏳ ${user} - 等待页面跳转到第二阶段...`);
     await page.waitForTimeout(3000);
-    
+
+    // 检查是否跳转到 signin.koyeb.com
+    let currentUrl2 = page.url();
+    console.log(`🔍 ${user} - 当前URL: ${currentUrl2}`);
+
+    if (currentUrl2.includes('signin.koyeb.com')) {
+      console.log(`✅ ${user} - 已跳转到第二阶段登录页面`);
+
+      // 第二阶段：再次输入邮箱（Radix UI 组件）
+      console.log(`📧 ${user} - 第二阶段：输入邮箱...`);
+
+      // 等待第二阶段邮箱输入框出现
+      await page.waitForTimeout(2000);
+
+      // 尝试定位第二阶段的邮箱输入框（Radix UI）
+      let emailInputStage2 = null;
+      const stage2EmailLocators = [
+        'input.rt-TextFieldInput[type="email"]',  // Radix UI 特定 class
+        'input[autocomplete*="email"]',
+        'input[name="email"]',
+        'input[type="email"]'
+      ];
+
+      for (const locator of stage2EmailLocators) {
+        try {
+          emailInputStage2 = await page.locator(locator).first();
+          if (await emailInputStage2.count() > 0) {
+            console.log(`✅ ${user} - 使用定位器 '${locator}' 找到第二阶段邮箱输入框`);
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (emailInputStage2 && await emailInputStage2.count() > 0) {
+        // 先清空输入框（因为可能已经预填充了邮箱）
+        await emailInputStage2.clear();
+        await page.waitForTimeout(500);
+        await emailInputStage2.fill(user);
+        console.log(`✅ ${user} - 第二阶段邮箱输入成功`);
+        await page.waitForTimeout(2000);
+
+        // 点击第二阶段的 Continue 按钮
+        console.log(`➡️ ${user} - 查找第二阶段 Continue 按钮...`);
+        let continueBtnStage2 = null;
+
+        // 尝试多种方式定位第二阶段 Continue 按钮
+        const stage2ContinueLocators = [
+          'button.rt-Button.BrandedButton[type="submit"]',
+          'button:has-text("Continue")',
+          'button[type="submit"]'
+        ];
+
+        for (const locator of stage2ContinueLocators) {
+          try {
+            continueBtnStage2 = await page.locator(locator).first();
+            if (await continueBtnStage2.count() > 0) {
+              console.log(`✅ ${user} - 使用定位器 '${locator}' 找到第二阶段 Continue 按钮`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        if (continueBtnStage2 && await continueBtnStage2.count() > 0) {
+          try {
+            await continueBtnStage2.click();
+            console.log(`✅ ${user} - 第二阶段 Continue 按钮点击成功`);
+          } catch (e) {
+            console.log(`⚠️ ${user} - 第二阶段 Continue 按钮点击失败: ${e.message}`);
+            // 尝试JavaScript点击
+            try {
+              await page.evaluate(() => {
+                document.querySelector("button[type='submit']").click();
+              });
+              console.log(`✅ ${user} - 使用JavaScript成功点击第二阶段 Continue 按钮`);
+            } catch (e2) {
+              console.log(`❌ ${user} - JavaScript点击也失败: ${e2.message}`);
+            }
+          }
+        } else {
+          console.log(`❌ ${user} - 未找到第二阶段 Continue 按钮`);
+        }
+      } else {
+        console.log(`❌ ${user} - 未找到第二阶段邮箱输入框`);
+      }
+    } else {
+      console.log(`⚠️ ${user} - 未检测到跳转到第二阶段，可能直接进入密码输入`);
+    }
+
+    // 等待密码输入框出现
+    console.log(`⏳ ${user} - 等待密码输入框出现...`);
+    await page.waitForTimeout(3000);
+
     // 第二步：输入密码
     console.log(`🔒 ${user} - 填写密码...`);
-    
-    // 使用多种定位器策略查找密码输入框
+
+    // 使用多种定位器策略查找密码输入框（Radix UI）
     let passwordInput = null;
     const passwordLocators = [
+      'input.rt-TextFieldInput[type="password"]',  // Radix UI 特定 class
+      'input[autocomplete*="password"]',
       'input[name="password"]',
       'input[type="password"]',
       'input[placeholder*="Password"]',
@@ -183,7 +283,7 @@ async function loginWithAccount(user, pass) {
       'xpath=//input[@type="password"]',
       'xpath=//input[@name="password"]'
     ];
-    
+
     // 等待密码输入框出现
     let passwordFound = false;
     for (let attempt = 0; attempt < 10; attempt++) {
@@ -199,36 +299,52 @@ async function loginWithAccount(user, pass) {
           continue;
         }
       }
-      
+
       if (passwordFound) break;
-      
+
       console.log(`⏳ ${user} - 等待密码输入框出现... (${attempt + 1}/10)`);
       await page.waitForTimeout(1000);
     }
-    
+
     if (!passwordFound) {
       throw new Error('未找到密码输入框');
     }
-    
+
     await passwordInput.fill(pass);
     await page.waitForTimeout(2000);
     console.log(`✅ ${user} - 密码输入成功`);
-    
+
     // 点击Sign in按钮
-    console.log(`🔑 ${user} - 点击Sign in按钮...`);
-    
-    // 首先找到Sign in按钮，类似Python脚本逻辑
+    console.log(`🔑 ${user} - 查找Sign in按钮...`);
+
+    // 尝试多种方式定位 Sign in 按钮
     let signInButton = null;
-    try {
-      signInButton = await page.locator('text=Sign in').first();
-      if (await signInButton.count() === 0) {
-        throw new Error('未找到Sign in按钮');
+    const signInLocators = [
+      'button[name="intent"][value="password"]',  // Radix UI 特定属性
+      'button.rt-Button.BrandedButton[type="submit"]',
+      'text=Sign in',
+      'button[type="submit"]'
+    ];
+
+    for (const locator of signInLocators) {
+      try {
+        signInButton = await page.locator(locator).first();
+        if (await signInButton.count() > 0) {
+          console.log(`✅ ${user} - 使用定位器 '${locator}' 找到 Sign in 按钮`);
+          break;
+        }
+      } catch (e) {
+        continue;
       }
-      console.log(`✅ ${user} - 找到Sign in按钮，检查是否可用...`);
-    } catch (e) {
-      throw new Error(`未找到Sign in按钮: ${e.message}`);
     }
-    
+
+    if (!signInButton || await signInButton.count() === 0) {
+      throw new Error('未找到Sign in按钮');
+    }
+
+    console.log(`✅ ${user} - 找到Sign in按钮，检查是否可用...`);
+
+
     // 等待Sign in按钮变为可用状态，完全按照Python脚本逻辑
     let signInClicked = false;
     for (let attempt = 0; attempt < 10; attempt++) {
@@ -237,16 +353,16 @@ async function loginWithAccount(user, pass) {
         const currentButton = await page.locator('text=Sign in').first();
         const buttonClass = await currentButton.getAttribute('class');
         console.log(`🔍 ${user} - Sign in按钮class属性: ${buttonClass}`);
-        
+
         // 检查按钮是否可用，完全按照Python脚本的逻辑
         let isDisabled = false;
         if (buttonClass) {
           isDisabled = buttonClass.includes('disabled') || buttonClass.includes('bg-gray/70');
         }
-        
+
         if (!isDisabled) {
           console.log(`✅ ${user} - Sign in按钮已可用，开始点击...`);
-          
+
           // 尝试多种点击方法，完全按照Python脚本的顺序
           try {
             // 方法1: 使用JavaScript点击（最可靠）
@@ -290,11 +406,11 @@ async function loginWithAccount(user, pass) {
         await page.waitForTimeout(1000);
       }
     }
-    
+
     if (!signInClicked) {
       throw new Error('无法点击Sign in按钮');
     }
-    
+
     // 等待页面响应登录操作，减少超时时间
     console.log(`⏳ ${user} - 等待页面响应登录操作...`);
     try {
@@ -303,11 +419,11 @@ async function loginWithAccount(user, pass) {
       console.log(`⚠️ ${user} - 网络空闲等待超时，继续检查登录状态...`);
     }
     await page.waitForTimeout(3000);
-    
+
     // 检查登录是否成功
     const loginUrl = page.url();
     console.log(`🔍 ${user} - 登录后URL: ${loginUrl}`);
-    
+
     if (loginUrl.includes('koyeb.com') && !loginUrl.includes('/auth/signin')) {
       console.log(`✅ ${user} - 登录成功！已跳转到主页面`);
       result.success = true;
@@ -315,11 +431,11 @@ async function loginWithAccount(user, pass) {
     } else {
       // 检查页面内容以确定登录状态
       const pageContent = await page.content();
-      if (pageContent.includes('dashboard') || 
-          pageContent.includes('applications') || 
-          pageContent.includes('services') ||
-          pageContent.includes('Deployments') ||
-          pageContent.includes('Overview')) {
+      if (pageContent.includes('dashboard') ||
+        pageContent.includes('applications') ||
+        pageContent.includes('services') ||
+        pageContent.includes('Deployments') ||
+        pageContent.includes('Overview')) {
         console.log(`✅ ${user} - 登录成功！（通过页面内容确认）`);
         result.success = true;
         result.message = `✅ ${user} 登录成功`;
@@ -328,7 +444,7 @@ async function loginWithAccount(user, pass) {
         result.message = `❌ ${user} 登录失败`;
       }
     }
-    
+
   } catch (e) {
     console.log(`❌ ${user} - 登录异常: ${e.message}`);
     result.message = `❌ ${user} 登录异常: ${e.message}`;
@@ -336,41 +452,41 @@ async function loginWithAccount(user, pass) {
     if (page) await page.close();
     await browser.close();
   }
-  
+
   return result;
 }
 
 async function main() {
   console.log(`🔍 发现 ${accountList.length} 个账号需要登录`);
-  
+
   const results = [];
-  
+
   for (let i = 0; i < accountList.length; i++) {
     const { user, pass } = accountList[i];
     console.log(`\n📋 处理第 ${i + 1}/${accountList.length} 个账号: ${user}`);
-    
+
     const result = await loginWithAccount(user, pass);
     results.push(result);
-    
+
     // 如果不是最后一个账号，等待一下再处理下一个
     if (i < accountList.length - 1) {
       console.log('⏳ 等待3秒后处理下一个账号...');
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
-  
+
   // 汇总所有结果并发送一条消息
   const successCount = results.filter(r => r.success).length;
   const totalCount = results.length;
-  
+
   let summaryMessage = `📊 Koyeb登录汇总: ${successCount}/${totalCount} 个账号成功\n\n`;
-  
+
   results.forEach(result => {
     summaryMessage += `${result.message}\n`;
   });
-  
+
   await sendTelegram(summaryMessage);
-  
+
   console.log('\n✅ 所有账号处理完成！');
 }
 
